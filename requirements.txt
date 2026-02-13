@@ -1,0 +1,3 @@
+google-genai==1.63.0
+opencv-python==4.13.0.92python-dotenv
+python-dotenv==1.2.1
