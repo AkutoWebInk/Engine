@@ -3,10 +3,9 @@ from google import genai
 from google.genai.errors import ClientError, ServerError, APIError
 
 # Agent response format:
-from models.VideoMetadata import VideoContentAnalysis
+from models.video import VideoAnalysis
 
-# Agent system instructions:
-from agent.instructions import INSTRUCTIONS
+from libs.google.instructions import INSTRUCTIONS
 
 # Misc:
 import os
@@ -23,25 +22,31 @@ CONFIG  = {
     "candidate_count"       : 1,
     "system_instruction"    : INSTRUCTIONS, 
     "response_mime_type"    : "application/json",
-    "response_schema"       : VideoContentAnalysis
+    "response_schema"       : VideoAnalysis
 }
 
 class GeminiAPI:
     def __init__(self):
         self.api = genai.Client(api_key=API_KEY)
         
-    def describe(self, video:str):
+    def analyze(self, video:str) -> VideoAnalysis:
+        '''Calls Gemini API and analyzes a video, following system instructions and response schema.'''
+        
         try:
-            print(f'Uploading:  {video}')
-            
+            # Upload the video and get the URI:
+            print('- Uploading video file.')
             uri = self.api.files.upload(file=video)
+            
+            # Pool for the URI:
             while uri.state.name == 'PROCESSING':
-                print(f'Pooling response:  \n{uri}')
-                time.sleep(2)
-                
+                print('- Pooling for URI...')
+                time.sleep(1)
                 uri = self.api.files.get(name= uri.name)
 
-            response = self.api.models.generate_content(model=MODEL, contents=[uri], config=CONFIG).text        
+            # Send the URI to the Gemini model:
+            response = self.api.models.generate_content(model=MODEL, contents=[uri], config=CONFIG).parsed
+            print('- Parsing response...')
+  
             return response
         
         except (ClientError, ServerError, APIError) as e:
