@@ -1,11 +1,11 @@
 import cv2
 import os
-from models.video import VideoMetadata
+from utils.baseModels import VideoMetadata
 
 class Extract:
 
     @staticmethod
-    def metadata(path:str)->VideoMetadata:
+    def metadata(path:str)-> VideoMetadata:
         '''Uses computer vision (cv2) librarby to read the video and extract relevant info.'''
         path = str(path)                                    # Stringfy the path just to make sure.
         

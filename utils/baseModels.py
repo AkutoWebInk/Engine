@@ -6,8 +6,9 @@ class VideoMetadata(BaseModel):
     width           : int = Field(0, description="Video width in pixels")
     height          : int = Field(0, description="Video height in pixels")
     duration        : float = Field(0.0, description="Duration of the video in seconds")
-    
+
 class VideoAnalysis(BaseModel):
+    suitable        : bool = Field(..., description="Whether the video is clean, professional, and suitable for VSL use")
     description     : str = Field(..., description="Detailed visual description of the video content")
     keywords        : List[str] = Field(..., description="List of relevant tags/keywords")
     category        : str = Field(..., description="Broad category (e.g., 'Medical', 'Nature', 'Sports')")
@@ -18,6 +19,7 @@ class Video(BaseModel):
     width           : int = Field(0, description="Video width in pixels")
     height          : int = Field(0, description="Video height in pixels")
     duration        : float = Field(0.0, description="Duration of the video in seconds")
+    suitable        : bool = Field(..., description="Whether the video is clean, professional, and suitable for VSL use")
     description     : str = Field(..., description="Detailed visual description of the video content")
     keywords        : List[str] = Field(..., description="List of relevant tags/keywords")
     category        : str = Field(..., description="Broad category (e.g., 'Medical', 'Nature', 'Sports')")

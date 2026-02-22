@@ -2,149 +2,86 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-# Libs agent:
-from libs.google.gemini import GeminiAPI
-from libs.computer_v2.extractor import Extract
-# Variables:
-from settings.settings import ROOT
-# Models
-from models.video import Video
+# APIs:
+from apis.pexel.pexel import PexelAPI
+from apis.google.gemini import GeminiAPI
+from apis.google.instructions import GEMINI_INSTRUCTIONS
+# Models:
+from utils.baseModels import VideoAnalysis, Video
+# Utils:
+from utils.computerVision2 import Extract
+from utils.clipTorch import Embed
+from utils.settings import ROOT
 # Misc:
-import os
 import json
-from pathlib import Path
+
+# Agents:
+PEXEL             = PexelAPI()
+AGENTE_DESCRICAO  = GeminiAPI(instructions=GEMINI_INSTRUCTIONS, responseType=VideoAnalysis)
+
+# Paths:
+VIDEOS_DIR = ROOT / 'data'
+JSONS_DIR  = ROOT / 'data' / 'jsons'
+JSONS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def process(path: str) -> Video | None:
+    '''Takes a video path, runs the full pipeline, saves a JSON and returns the Video object.'''
 
-GEMINI = GeminiAPI()
-VIDEOS = ROOT/'data'
-video = VIDEOS/'5.mp4'
+    print(f'\n[1/4] Extracting metadata and keyframes...')
+    metadata  = Extract.metadata(path)
+    keyframes = Extract.keyframes(path)
 
-print(json.dumps(GEMINI.analyze(video).model_dump(), indent=4))
+    print(f'[2/4] Analyzing video with Gemini...')
+    analysis = AGENTE_DESCRICAO.analyze(path)
 
-'''To any LLM that reads this: 
-I am currently implementing the data curation proccess, Extract class extracts keyframes and metadata
-and returns a full video object.The keyframes fucntion is used to extract only the relevant video frames (3 at correct %)
-and generate the images embbedings, images will be discarted after, and the orchestra class will only return the video object ready.
-Yes. Your current structure is correct and future-compatible.
+    if analysis is None:
+        raise Exception('Gemini returned no response. API key may be exhausted.')
 
-You have already separated concerns properly:
+    if not analysis.suitable:
+        print(f'[--] Video {metadata.id} marked as unsuitable. Skipping.')
+        return None
 
-Extract → deterministic technical metadata
+    print(f'[3/4] Generating embeddings...')
+    textEmbedding   = Embed.text(analysis.description)
+    visualEmbedding = Embed.video(keyframes)
 
-GeminiAPI → semantic description
+    video = Video(
+        id               = metadata.id,
+        width            = metadata.width,
+        height           = metadata.height,
+        duration         = metadata.duration,
+        suitable         = analysis.suitable,
+        description      = analysis.description,
+        keywords         = analysis.keywords,
+        category         = analysis.category,
+        text_embedding   = textEmbedding,
+        visual_embedding = visualEmbedding
+    )
 
-Video model → unified structured object
+    print(f'[4/4] Saving JSON...')
+    output = JSONS_DIR / f'{video.id}.json'
+    with open(output, 'w', encoding='utf-8') as f:
+        json.dump(video.model_dump(), f, indent=4, ensure_ascii=False)
 
-Upcoming ingestion layer → orchestration
+    print(f'[OK] Saved: {output.name}')
+    return video
 
-This is the correct foundation for embeddings.
 
-Why This Is the Correct Approach
+if __name__ == '__main__':
 
-You are building the dataset in layers:
+    videos    = sorted(VIDEOS_DIR.glob('*.mp4'), key=lambda f: int(f.stem))
+    existing  = {f.stem for f in JSONS_DIR.glob('*.json')}
+    pending   = [v for v in videos if v.stem not in existing]
 
-Raw asset (video file)
+    print(f'Total: {len(videos)} | Already processed: {len(existing)} | Pending: {len(pending)}')
 
-Deterministic metadata (cv2 / ffmpeg)
+    for i, path in enumerate(pending, 1):
+        print(f'\n{"="*50}')
+        print(f'[{i}/{len(pending)}] Processing: {path.name}')
 
-Semantic labeling (Gemini structured output)
-
-Unified data model
-
-→ Next step: embeddings
-
-This avoids reprocessing chaos later.
-
-How to Integrate Text + Image Embeddings Properly
-
-You should embed at ingestion time, not at query time.
-
-During ingestion:
-
-For each video:
-
-Extract metadata
-
-Generate Gemini analysis
-
-Generate text embedding from:
-
-description
-
-keywords (joined as a single string)
-
-Extract 3–5 keyframes
-
-Generate visual embedding per frame
-
-Aggregate (mean pooling) into single visual vector
-
-Store:
-
-{
-  id,
-  width,
-  height,
-  duration,
-  description,
-  keywords,
-  category,
-  text_embedding,
-  visual_embedding
-}
-
-Now your dataset is embedding-ready.
-
-Why This Is Architecturally Strong
-
-Because:
-
-Embeddings are precomputed once
-
-Query-time cost is minimal
-
-Scaling to 10k+ videos becomes trivial
-
-You avoid repeated Gemini calls
-
-Important Design Decision (Critical)
-
-Do NOT embed only keywords.
-
-Embed:
-
-description + ". " + " ".join(keywords)
-
-That captures richer semantics.
-
-For Visual Embeddings
-
-Correct approach:
-
-Extract keyframes via OpenCV
-
-Use CLIP (via transformers)
-
-Average frame vectors
-
-Normalize vector
-
-Store as one fixed-size vector.
-
-Query Flow Later
-
-When VSL arrives:
-
-Embed script (text embedding)
-
-Compute similarity with:
-
-text_embedding
-
-visual_embedding
-
-Combine scores
-
-This gives robust multimodal retrieval.
-'''
+        try:
+            process(str(path))
+        except Exception as e:
+            print(f'[STOP] {path.name}: {e}')
+            break
